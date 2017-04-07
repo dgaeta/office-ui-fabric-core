@@ -50,6 +50,32 @@ gulp.task('Fabric-copyAssets', function () {
 // Sass tasks
 // ----------------------------------------------------------------------------
 
+// Set the ISassTaskConfig
+Plugins.gulpCoreBuildSass.sass.setConfig({
+  useCSSModules: true
+});
+
+// do we set the build config here?
+Plugins.gulpCoreBuildSass.BuildConfig = {
+  rootPath: Config.paths.rootPath,
+  libFolder: Config.paths.libFolder
+};
+
+var postCSSPlugins = [
+  Plugins.autoprefixer({ 
+    cascade: false,
+    browsers: ['> 1%', 'last 2 versions', 'ie >= 10'] 
+  })
+];
+var modulePostCssPlugins = postCSSPlugins.slice(0);
+
+modulePostCssPlugins.push(Plugins.cssModules({
+  getJSON: generateModuleStub,
+  generateScopedName: generateScopedName
+}));
+
+var completeCallback = (result) => { console.log(result); };
+
 gulp.task('Fabric-buildStyles', function () {
     var fabric = gulp.src(BuildConfig.srcPath + '/' + 'Fabric.' + BuildConfig.fileExtension)
             .pipe(Plugins.plumber(ErrorHandling.onErrorInPipe))
@@ -76,7 +102,7 @@ gulp.task('Fabric-buildStyles', function () {
             .pipe(Plugins.header(Banners.getCSSCopyRight(), Banners.getBannerData()))
             .pipe(gulp.dest(Config.paths.distCSS));    
     
-    var fabricScoped = gulp.src(BuildConfig.srcPath + '/' + 'Fabric.Scoped.' + BuildConfig.fileExtension)
+    var fabricScoped_1 = gulp.src(BuildConfig.srcPath + '/' + 'Fabric.Scoped.' + BuildConfig.fileExtension)
             .pipe(Plugins.gulpif(Config.debugMode, Plugins.debug({
               title: "Building Core Fabric Scoped " + BuildConfig.fileExtension + " File"
             })))
@@ -84,11 +110,12 @@ gulp.task('Fabric-buildStyles', function () {
             .pipe(Plugins.header(Banners.getCSSCopyRight(), Banners.getBannerData()))
             .pipe(Plugins.replace('<%= fabricVersion %>', versionCommaDelim))
             .pipe(BuildConfig.processorPlugin().on('error', BuildConfig.compileErrorHandler))
-            .pipe(Plugins.rename('fabric-' + version.major + '.' + version.minor + '.' + version.patch + '.scoped.css'))
-            .pipe(Plugins.autoprefixer({
-              browsers: ['last 2 versions', 'ie >= 9'],
-              cascade: false
-            }))
+            .pipe(Plugins.rename('fabric-' + version.major + '.' + version.minor + '.' + version.patch + '.scoped.css'));
+
+    var fabricScoped_2 = gulp.src(BuildConfig.srcPath + '/' + 'Fabric.Scoped.' + BuildConfig.fileExtension)
+            .pipe(getProcessedFiles());
+
+var fabricScoped = Plugins.mergeStream(fabricScoped_1, fabricScoped_2)
             .pipe(Plugins.cssbeautify())
             .pipe(Plugins.csscomb())
             .pipe(gulp.dest(Config.paths.distCSS))
@@ -138,3 +165,23 @@ gulp.task('Fabric-buildStyles', function () {
 gulp.task('Fabric', ['Fabric-copyAssets', 'Fabric-buildStyles']);
 BuildConfig.buildTasks.push('Fabric');
 BuildConfig.nukeTasks.push('Fabric-nuke');
+
+var _classMaps = {};
+
+function getProcessedFiles() {
+  var sassMatch = [ 'src/**/*.scss' ];
+  return Plugins.gulpCoreBuildSass.sass.processFiles(gulp, sassMatch, completeCallback, modulePostCssPlugins);
+}
+
+function generateModuleStub(cssFileName, json) {
+  cssFileName = cssFileName.replace('.css', '.scss.ts');
+  _classMaps[cssFileName] = json;
+}
+
+function generateScopedName(name, fileName, css) {
+  /* tslint:disable:typedef */
+  const crypto = require('crypto');
+  /* tslint:enable:typedef */
+
+  return name + '_' + crypto.createHmac('sha1', fileName).update(css).digest('hex').substring(0, 8);
+}
